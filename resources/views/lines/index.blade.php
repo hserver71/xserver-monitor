@@ -132,7 +132,7 @@ $(document).ready(function() {
             return;
         }
         
-        showLoading();
+        showLoading(true);
         
         $.ajax({
             url: '/api/lines/client/' + currentClientId + '/fetch-store',
@@ -149,6 +149,7 @@ $(document).ready(function() {
                 } else {
                     alert('Failed to fetch lines: ' + response.message);
                 }
+                showLoading(false);
             },
             error: function(xhr, status, error) {
                 hideLoading();
@@ -182,10 +183,11 @@ $(document).ready(function() {
         $('#fetchLinesBtn').show();
         
         // Show loading
-        showLoading();
+        showLoading(true);
         
         // Fetch stored lines for this client
         fetchStoredLines(clientId);
+        showLoading(false);
     });
 
     // Line click handler (delegated)
@@ -202,10 +204,11 @@ $(document).ready(function() {
         clearVpsSection();
         
         // Show loading
-        showLoading();
+        showLoading(true);
         
         // Fetch VPS for this line
         fetchLineVps(lineId, currentClientId);
+        showLoading(false);
     });
 
     function fetchStoredLines(clientId) {
@@ -397,12 +400,12 @@ $(document).ready(function() {
         `);
     }
 
-    function showLoading() {
-        $('#loadingModal').modal('show');
-        // Add a timeout to automatically hide loading after 10 seconds
-        setTimeout(function() {
+    function showLoading(isShow=true) {
+        if(isShow){
+            $('#loadingModal').modal('show');
+        }else {
             hideLoading();
-        }, 1000);
+        }
     }
 
     function hideLoading() {

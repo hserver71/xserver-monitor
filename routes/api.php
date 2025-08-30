@@ -35,3 +35,8 @@ Route::get('/lines/test', [App\Http\Controllers\LinesController::class, 'test'])
 
 // Line Status Check API
 Route::get('/check-line-status', [App\Http\Controllers\LinesController::class, 'checkLineStatus']);
+
+// VPS Line Management API
+Route::get('/client/{clientId}/lines', [App\Http\Controllers\VpsController::class, 'getClientLines']);
+Route::post('/assign-line-to-vps', [App\Http\Controllers\VpsController::class, 'assignLineToVps']);
+Route::post('/unassign-line-from-vps', [App\Http\Controllers\VpsController::class, 'unassignLineFromVps']);
