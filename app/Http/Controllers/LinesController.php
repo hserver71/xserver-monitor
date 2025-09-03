@@ -71,11 +71,11 @@ class LinesController extends Controller
             }
 
             // Get VPS instances for this client
-            $vpsInstances = Vps::where('client_id', $client->id)->get();
+            // $vpsInstances = Vps::where('client_id', $client->id)->get();
             
-            if ($vpsInstances->isEmpty()) {
-                return response()->json(['success' => false, 'message' => 'No VPS instances found for this client'], 404);
-            }
+            // if ($vpsInstances->isEmpty()) {
+            //     return response()->json(['success' => false, 'message' => 'No VPS instances found for this client'], 404);
+            // }
 
             // Get servers for this client
             $servers = Server::where('client_id', $client->id)->get();
@@ -117,61 +117,65 @@ class LinesController extends Controller
 
             if (empty($domainConfigs)) {
                 return response()->json(['success' => false, 'message' => 'No valid domains found for configuration'], 400);
-            }
+            };
 
             // Configure nginx on each VPS
             $configuredVpsCount = 0;
             $errors = [];
-
-            foreach ($vpsInstances as $vps) {
-                try {
-                    // Check if VPS has required credentials
-                    if (!$vps->ip || !$vps->username || !$vps->password) {
-                        $errors[] = "VPS {$vps->id} missing credentials (IP, username, or password)";
-                        continue;
-                    }
-
-                    // Configure nginx on VPS
-                    $sshService = new \App\Services\SSHService($vps->ip, $vps->username, $vps->password);
-                    $sshService->connect();
-
-                    // Check nginx status
-                    $nginxStatus = $sshService->checkNginxStatus();
-                    
-                    if (!$nginxStatus['installed'] || !$nginxStatus['running']) {
-                        // Install nginx if not installed or not running
-                        Log::info('Installing nginx on VPS', ['vps_id' => $vps->id, 'ip' => $vps->ip]);
-                        $sshService->installNginxProxy();
-                    }
-
-                    // Configure nginx with domain configurations
-                    Log::info('Configuring nginx with domain configs', [
-                        'vps_id' => $vps->id,
-                        'domain_configs' => $domainConfigs
-                    ]);
-                    
-                    $sshService->configureNginxWithDomainConfigs($domainConfigs);
-                    
-                    $sshService->disconnect();
-
-                    // Update VPS with line information
-                    $vps->update([
-                        'linename' => $lineUsername,
-                        'serverdomain' => $lineUsername . '.' . $client->domain,
-                        'domains' => json_encode($domainConfigs)
-                    ]);
-
-                    $configuredVpsCount++;
-                    Log::info('Successfully configured VPS ' . $vps->id);
-
-                } catch (\Exception $sshException) {
-                    Log::error('SSH/Nginx configuration failed for VPS ' . $vps->id, [
-                        'vps_id' => $vps->id,
-                        'error' => $sshException->getMessage()
-                    ]);
-                    $errors[] = "VPS {$vps->id}: " . $sshException->getMessage();
+            $targetVPS = Vps::where('username', null)
+                ->orWhere('username', '')
+                ->first();
+            if (!$targetVPS) {
+                return response()->json(['success' => false, 'message' => 'No VPS found for configuration'], 400);
+            };
+            try {
+                // Check if VPS has required credentials
+                if (!$targetVPS->ip || !$targetVPS->username || !$targetVPS->password) {
+                    $errors[] = "VPS {$targetVPS->id} missing credentials (IP, username, or password)";
                 }
+
+                // Configure nginx on VPS
+                $sshService = new \App\Services\SSHService($targetVPS->ip, $targetVPS->username, $targetVPS->password);
+                $sshService->connect();
+
+                // Check nginx status
+                $nginxStatus = $sshService->checkNginxStatus();
+                
+                if (!$nginxStatus['installed'] || !$nginxStatus['running']) {
+                    // Install nginx if not installed or not running
+                    Log::info('Installing nginx on VPS', ['vps_id' => $targetVPS->id, 'ip' => $targetVPS->ip]);
+                    $sshService->installNginxProxy();
+                }
+
+                // Configure nginx with domain configurations
+                Log::info('Configuring nginx with domain configs', [
+                    'vps_id' => $targetVPS->id,
+                    'domain_configs' => $domainConfigs
+                ]);
+                
+                $sshService->configureNginxWithDomainConfigs($domainConfigs);
+                
+                $sshService->disconnect();
+
+                // Update VPS with line information
+                $targetVPS->update([
+                    'linename' => $lineUsername,
+                    'serverdomain' => json_encode($domainConfigs),
+                    'domains' => json_encode($domainConfigs)
+                ]);
+
+                $configuredVpsCount++;
+                Log::info('Successfully configured VPS ' . $targetVPS->id);
+
+            } catch (\Exception $sshException) {
+                Log::error('SSH/Nginx configuration failed for VPS ' . $targetVPS->id, [
+                    'vps_id' => $targetVPS->id,
+                    'error' => $sshException->getMessage()
+                ]);
+                $errors[] = "VPS {$targetVPS->id}: " . $sshException->getMessage();
             }
+            // foreach ($vpsInstances as $vps) {
+            // }
 
             if ($configuredVpsCount === 0) {
                 return response()->json([
