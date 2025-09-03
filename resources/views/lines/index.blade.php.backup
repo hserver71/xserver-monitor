@@ -85,6 +85,20 @@
         </div>
     </div>
 </div>
+
+<!-- Loading Spinner Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 mb-0">Loading...</p>
+            </div>
+        </div>
+    </div>
+</div>
 @endsection
 
 @push('scripts')
@@ -118,6 +132,8 @@ $(document).ready(function() {
             return;
         }
         
+        showLoading(false);
+        
         $.ajax({
             url: '/api/lines/client/' + currentClientId + '/fetch-store',
             method: 'POST',
@@ -125,6 +141,7 @@ $(document).ready(function() {
                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
             },
             success: function(response) {
+                hideLoading();
                 if (response.success) {
                     alert(response.message);
                     // Refresh the lines display
@@ -132,9 +149,15 @@ $(document).ready(function() {
                 } else {
                     alert('Failed to fetch lines: ' + response.message);
                 }
+                showLoading(false);
             },
             error: function(xhr, status, error) {
+                hideLoading();
                 alert('Error fetching lines: ' + error);
+            },
+            complete: function() {
+                // Ensure loading is always hidden
+                hideLoading();
             }
         });
     });
@@ -159,6 +182,8 @@ $(document).ready(function() {
         // Show fetch button
         $('#fetchLinesBtn').show();
         
+        // Show loading
+        
         // Fetch stored lines for this client
         fetchStoredLines(clientId);
     });
@@ -176,8 +201,12 @@ $(document).ready(function() {
         // Clear VPS section
         clearVpsSection();
         
+        // Show loading
+        showLoading(false);
+        
         // Fetch VPS for this line
         fetchLineVps(lineId, currentClientId);
+        showLoading(false);
     });
 
     function fetchStoredLines(clientId) {
@@ -191,6 +220,7 @@ $(document).ready(function() {
             method: 'GET',
             success: function(response) {
                 console.log('Stored lines response:', response); // Debug log
+                hideLoading();
                 if (response.success) {
                     displayLines(response.lines);
                 } else {
@@ -200,7 +230,12 @@ $(document).ready(function() {
             error: function(xhr, status, error) {
                 console.log('AJAX error:', status, error); // Debug log
                 console.log('Response:', xhr.responseText); // Debug log
+                hideLoading();
                 showError('Error fetching stored lines. Please try again.');
+            },
+            complete: function() {
+                // Ensure loading is always hidden
+                hideLoading();
             }
         });
     }
@@ -216,6 +251,7 @@ $(document).ready(function() {
             method: 'GET',
             success: function(response) {
                 console.log('Lines response:', response); // Debug log
+                hideLoading();
                 if (response.success) {
                     displayLines(response.lines);
                 } else {
@@ -225,7 +261,12 @@ $(document).ready(function() {
             error: function(xhr, status, error) {
                 console.log('AJAX error:', status, error); // Debug log
                 console.log('Response:', xhr.responseText); // Debug log
+                hideLoading();
                 showError('Error fetching lines. Please try again.');
+            },
+            complete: function() {
+                // Ensure loading is always hidden
+                hideLoading();
             }
         });
     }
@@ -237,6 +278,7 @@ $(document).ready(function() {
             url: '/api/lines/line/' + lineId + '/client/' + clientId + '/vps',
             method: 'GET',
             success: function(response) {
+                hideLoading();
                 if (response.success) {
                     displayVps(response.vps);
                 } else {
@@ -244,7 +286,12 @@ $(document).ready(function() {
                 }
             },
             error: function(xhr) {
+                hideLoading();
                 showError('Error fetching VPS. Please try again.');
+            },
+            complete: function() {
+                // Ensure loading is always hidden
+                hideLoading();
             }
         });
     }
@@ -351,10 +398,23 @@ $(document).ready(function() {
         `);
     }
 
+    function showLoading(isShow=true) {
+        if(isShow){
+            $('#loadingModal').modal('show');
+        }else {
+            hideLoading();
+        }
+    }
+
+    function hideLoading() {
+        console.log('Hiding loading spinner'); // Debug log
+        $('#loadingModal').modal('hide');
+    }
+
     function showError(message) {
         // You can implement a better error display method
         alert(message);
     }
 });
 </script>
-@endpush
+@endpush 

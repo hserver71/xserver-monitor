@@ -41,12 +41,6 @@
                             <input type="text" name="name" id="name" class="form-control" value="{{ old('name', $client->name) }}" required>
                         </div>
                         <div class="col-md-6">
-                            <label for="domain" class="form-label">Domain</label>
-                            <input type="text" name="domain" id="domain" class="form-control" value="{{ old('domain', $client->domain) }}" required>
-                        </div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-md-6">
                             <label for="ip" class="form-label">IP Address</label>
                             <input type="text" name="ip" id="ip" class="form-control" value="{{ old('ip', $client->ip) }}" required>
                         </div>
@@ -75,10 +69,19 @@ document.addEventListener('DOMContentLoaded', function() {
         const domain = document.getElementById('domain').value;
         const ip = document.getElementById('ip').value;
         
-        if (!name || !domain || !ip) {
+        if (!name || !ip) {
             alert('Please fill in all required fields');
             return;
         }
+        
+        // Domain validation (only if domain is provided)
+        // if (domain) {
+        //     const domainPattern = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.([a-zA-Z]{2,}|[a-zA-Z]{2,}\.[a-zA-Z]{2,})$/;
+        //     if (!domainPattern.test(domain)) {
+        //         alert('Please enter a valid domain name');
+        //         return;
+        //     }
+        // }
         
         // IP validation
         const ipPattern = /^(?!0)(?!.*\.$)((1?\d?\d|25[0-5]|2[0-4]\d)(\.|$)){4}$/;

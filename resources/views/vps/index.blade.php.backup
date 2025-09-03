@@ -63,8 +63,8 @@
                                     @endif
                                 </td>
                                 <td>
-                                    @if($vpsInstance->domains)
-                                        <code>{{ $vpsInstance->domains }}</code>
+                                    @if($vpsInstance->serverdomain)
+                                        <code>{{ $vpsInstance->serverdomain }}</code>
                                     @else
                                         <span class="text-muted">-</span>
                                     @endif

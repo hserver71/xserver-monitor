@@ -9,6 +9,7 @@ use App\Models\Line;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use App\Models\Server;
 
 class LinesController extends Controller
 {
@@ -34,31 +35,31 @@ class LinesController extends Controller
                 return response()->json(['success' => false, 'message' => 'Line parameter is required'], 400);
             }
 
+            // Get client's real IP address
+            $clientIp = $request->ip();
+            
+            // Alternative methods to get client IP
+            $realIp = $request->header('X-Real-IP');
+            $forwardedIp = $request->header('X-Forwarded-For');
+            $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            
             // Parse origin address to get client domain
             $origin = $request->header('Origin') ?? $request->header('Referer');
-            
-            if (!$origin) {
-                return response()->json(['success' => false, 'message' => 'Origin header not found'], 400);
-            }
 
             // Extract domain from origin (remove protocol and port)
             $parsedUrl = parse_url($origin);
-            $clientDomain = $parsedUrl['host'] ?? null;
+            $clientIp = $request->header('X-Real-IP');
             
-            if (!$clientDomain) {
+            if (!$clientIp) {
                 return response()->json(['success' => false, 'message' => 'Could not parse client domain from origin'], 400);
             }
 
-            Log::info('Client domain from origin: ' . $clientDomain);
-
             // Find client by domain
-            $client = Client::where('domain', $clientDomain)->first();
+            $client = Client::where('ip', $clientIp)->first();
             
             if (!$client) {
-                return response()->json(['success' => false, 'message' => 'Client not found for domain: ' . $clientDomain], 404);
+                return response()->json(['success' => false, 'message' => 'Client not found for domain: ' . $clientIp], 404);
             }
-
-            Log::info('Client found: ' . $client->name . ' (ID: ' . $client->id . ')');
 
             // Find line by username and client
             $line = Line::where('username', $lineUsername)
@@ -69,67 +70,125 @@ class LinesController extends Controller
                 return response()->json(['success' => false, 'message' => 'Line not found for username: ' . $lineUsername], 404);
             }
 
-            Log::info('Line found: ' . $line->username . ' (ID: ' . $line->id . ')');
-
-            // Find VPS instances with empty domain fields for this client
-            $vpsInstances = Vps::where('client_id', $client->id)
-                               ->where(function($query) {
-                                   $query->whereNull('domains')
-                                         ->orWhere('domains', '')
-                                         ->orWhere('domains', '[]')
-                                         ->orWhere('domains', '[""]')
-                                         ->orWhere('domains', '{}');
-                               })
-                               ->get();
-
-            Log::info('Found ' . $vpsInstances->count() . ' VPS instances with empty domains');
+            // Get VPS instances for this client
+            $vpsInstances = Vps::where('client_id', $client->id)->get();
             
-            // Log the VPS instances for debugging
-            foreach ($vpsInstances as $vps) {
-                Log::info('VPS ' . $vps->id . ' - domains: ' . ($vps->domains ?? 'NULL'));
-            }
-
             if ($vpsInstances->isEmpty()) {
-                return response()->json(['success' => false, 'message' => 'No VPS instances with empty domains found'], 404);
+                return response()->json(['success' => false, 'message' => 'No VPS instances found for this client'], 404);
             }
 
-            // Assign domains to VPS instances
-            $assignedCount = 0;
-            foreach ($vpsInstances as $vps) {
-                try {
-                    // Create domain array: [linename + client domain]
-                    $domainArray = [$lineUsername . '.' . $client->domain];
-                    
-                    Log::info('Assigning domain to VPS ' . $vps->id . ': ' . json_encode($domainArray));
-                    
-                    // Update VPS with domain array using DB transaction for safety
-                    DB::beginTransaction();
-                    
-                    $vps->domains = json_encode($domainArray);
-                    $vps->save();
-                    
-                    DB::commit();
-                    
-                    $assignedCount++;
-                    Log::info('Successfully updated VPS ' . $vps->id . ' with domains: ' . $vps->domains);
-                    
-                } catch (\Exception $e) {
-                    DB::rollBack();
-                    Log::error('Error updating VPS ' . $vps->id . ': ' . $e->getMessage());
-                    Log::error('Stack trace: ' . $e->getTraceAsString());
-                    continue;
+            // Get servers for this client
+            $servers = Server::where('client_id', $client->id)->get();
+            $domainConfigs = [];
+            
+            foreach ($servers as $server) {
+                Log::info('Server: ' . $server->domain);
+                if ($server->domain) {
+                    $domains = array_map('trim', explode(',', $server->domain));
+                    foreach ($domains as $domain) {
+                        if ($domain) {
+                            if (str_contains($domain, '*')) {                        
+                                if (str_starts_with($domain, '*.')) {
+                                    $cleanDomain = ltrim($domain, '*.');
+                                    $domainConfigs[] = [
+                                        'main_domain' => $lineUsername . '.' . $cleanDomain, 
+                                        'proxy' => $cleanDomain
+                                    ]; 
+                                }
+                            } else {
+                                // Non-wildcard domain
+                                $domainConfigs[] = [
+                                    'main_domain' => $domain,
+                                    'proxy' => $domain
+                                ];
+                            }
+                        }
+                    }
                 }
             }
 
-            Log::info('Successfully assigned domains to ' . $assignedCount . ' VPS instances');
+            // Add line's username with client's domain
+            $domainConfigs[] = [
+                'main_domain' => $lineUsername . '.' . $client->domain,
+                'proxy' => $client->domain
+            ];
+
+            Log::info('Domain Configs: ' . json_encode($domainConfigs));
+
+            if (empty($domainConfigs)) {
+                return response()->json(['success' => false, 'message' => 'No valid domains found for configuration'], 400);
+            }
+
+            // Configure nginx on each VPS
+            $configuredVpsCount = 0;
+            $errors = [];
+
+            foreach ($vpsInstances as $vps) {
+                try {
+                    // Check if VPS has required credentials
+                    if (!$vps->ip || !$vps->username || !$vps->password) {
+                        $errors[] = "VPS {$vps->id} missing credentials (IP, username, or password)";
+                        continue;
+                    }
+
+                    // Configure nginx on VPS
+                    $sshService = new \App\Services\SSHService($vps->ip, $vps->username, $vps->password);
+                    $sshService->connect();
+
+                    // Check nginx status
+                    $nginxStatus = $sshService->checkNginxStatus();
+                    
+                    if (!$nginxStatus['installed'] || !$nginxStatus['running']) {
+                        // Install nginx if not installed or not running
+                        Log::info('Installing nginx on VPS', ['vps_id' => $vps->id, 'ip' => $vps->ip]);
+                        $sshService->installNginxProxy();
+                    }
+
+                    // Configure nginx with domain configurations
+                    Log::info('Configuring nginx with domain configs', [
+                        'vps_id' => $vps->id,
+                        'domain_configs' => $domainConfigs
+                    ]);
+                    
+                    $sshService->configureNginxWithDomainConfigs($domainConfigs);
+                    
+                    $sshService->disconnect();
+
+                    // Update VPS with line information
+                    $vps->update([
+                        'linename' => $lineUsername,
+                        'serverdomain' => $lineUsername . '.' . $client->domain,
+                        'domains' => json_encode($domainConfigs)
+                    ]);
+
+                    $configuredVpsCount++;
+                    Log::info('Successfully configured VPS ' . $vps->id);
+
+                } catch (\Exception $sshException) {
+                    Log::error('SSH/Nginx configuration failed for VPS ' . $vps->id, [
+                        'vps_id' => $vps->id,
+                        'error' => $sshException->getMessage()
+                    ]);
+                    $errors[] = "VPS {$vps->id}: " . $sshException->getMessage();
+                }
+            }
+
+            if ($configuredVpsCount === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to configure nginx on any VPS',
+                    'errors' => $errors
+                ], 500);
+            }
 
             return response()->json([
                 'success' => true,
-                'message' => "Successfully assigned domains to {$assignedCount} VPS instances",
-                'assigned_count' => $assignedCount,
+                'message' => "Successfully configured nginx on {$configuredVpsCount} VPS instances",
+                'configured_vps_count' => $configuredVpsCount,
                 'line_username' => $lineUsername,
                 'client_domain' => $client->domain,
-                'assigned_domains' => $lineUsername . '.' . $client->domain
+                'domain_configs' => $domainConfigs,
+                'errors' => $errors
             ]);
 
         } catch (\Exception $e) {
@@ -179,7 +238,7 @@ class LinesController extends Controller
         
         try {
             // Fetch lines from client's domain
-            $url = 'http://' . $client->domain . '/block_actions.php?action=line';
+            $url = 'http://' . $client->ip . '/block_actions.php?action=line';
             $response = Http::get($url);
             
             if ($response->successful()) {
@@ -269,5 +328,24 @@ class LinesController extends Controller
     
     public function test() {
         return response()->json(['message' => 'LinesController is working!']);
+    }
+
+    /**
+     * Debug method to see all request information
+     */
+    public function debugRequest(Request $request)
+    {
+        $debugInfo = [
+            'client_ip' => $request->ip(),
+            'real_ip' => $request->header('X-Real-IP'),
+            'forwarded_for' => $request->header('X-Forwarded-For'),
+            'remote_addr' => $_SERVER['REMOTE_ADDR'] ?? 'not set',
+            'http_client_ip' => $_SERVER['HTTP_CLIENT_IP'] ?? 'not set',
+            'http_x_forwarded_for' => $_SERVER['HTTP_X_FORWARDED_FOR'] ?? 'not set',
+            'all_headers' => $request->headers->all(),
+            'server_vars' => $_SERVER
+        ];
+        
+        return response()->json($debugInfo);
     }
 }

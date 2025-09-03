@@ -24,14 +24,14 @@
                 <form action="{{ route('clients.store') }}" method="POST" id="create-client-form">
                     @csrf
                     <div class="row mb-3">
-                        <div class="col-md-6">
+                        <div class="col-md-12">
                             <label for="name" class="form-label">Client Name</label>
                             <input type="text" class="form-control" id="name" name="name" required>
                         </div>
-                        <div class="col-md-6">
+                        <!-- <div class="col-md-6">
                             <label for="domain" class="form-label">Domain</label>
-                            <input type="text" class="form-control" id="domain" name="domain" required>
-                        </div>
+                            <input type="text" class="form-control" id="domain" name="domain">
+                        </div> -->
                     </div>
                     <div class="row mb-3">
                         <div class="col-md-6">
@@ -67,10 +67,20 @@ document.addEventListener('DOMContentLoaded', function() {
         const domain = document.getElementById('domain').value;
         const ip = document.getElementById('ip').value;
         
-        if (!name || !domain || !ip) {
+        if (!name || !ip) {
             alert('Please fill in all required fields');
             return;
         }
+        
+        // Domain validation (only if domain is provided)
+        //if (domain) {
+        //    const domainPattern = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.([a-zA-Z]{2,}|[a-zA-Z]{2,}\.[a-zA-Z]{2,})$/;
+        //    if (!domainPattern.test(domain)) {
+        //        alert('Please enter a valid domain name');
+        //        return;
+        //    }
+        //}
+        //}
         
         // IP validation
         const ipPattern = /^(?!0)(?!.*\.$)((1?\d?\d|25[0-5]|2[0-4]\d)(\.|$)){4}$/;

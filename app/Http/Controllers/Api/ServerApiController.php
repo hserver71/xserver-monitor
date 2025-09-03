@@ -50,9 +50,6 @@ class ServerApiController extends Controller
             ]);
 
             $client = Client::findOrFail($request->client_id);
-            if (empty($client->domain)) {
-                throw new \Exception('Client does not have a domain configured');
-            }
 
             // Check if we should use test mode
             $useTestMode = $request->input('test_mode', false);
@@ -62,7 +59,7 @@ class ServerApiController extends Controller
             }
 
             // Build the client's API URL
-            $clientApiUrl = $this->buildClientApiUrl($client->domain);
+            $clientApiUrl = $this->buildClientApiUrl($client->ip);
             
             Log::info('API URL built', [
                 'original_domain' => $client->domain,
@@ -155,9 +152,9 @@ class ServerApiController extends Controller
                 'raw_response' => $response->body()
             ]);
             
-            if (!$apiData || !is_array($apiData)) {
-                throw new \Exception('Invalid response format from client API. Expected array, got: ' . gettype($apiData));
-            }
+            // if (!$apiData || !is_array($apiData)) {
+            //     throw new \Exception('Invalid response format from client API. Expected array, got: ' . gettype($apiData));
+            // }
 
             Log::info('API data validation passed', [
                 'data_count' => count($apiData),

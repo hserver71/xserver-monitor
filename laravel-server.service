@@ -1,0 +1,18 @@
+[Unit]
+Description=Laravel Web Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/home/xserver-monitor
+ExecStart=/usr/bin/php artisan serve --host=0.0.0.0 --port=8000
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=laravel-server
+
+[Install]
+WantedBy=multi-user.target 

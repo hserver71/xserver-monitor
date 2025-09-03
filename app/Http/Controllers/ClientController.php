@@ -23,7 +23,7 @@ class ClientController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'ip' => ['required', 'ip'],
-            'domain' => ['required', 'string', 'max:255']
+            'domain' => ['nullable', 'string', 'max:255']
         ]);
 
         Client::create($validated);
@@ -49,7 +49,7 @@ class ClientController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'ip' => ['required', 'ip'],
-            'domain' => ['required', 'string', 'max:255']
+            'domain' => ['nullable', 'string', 'max:255']
         ]);
 
         $client->update($validated);

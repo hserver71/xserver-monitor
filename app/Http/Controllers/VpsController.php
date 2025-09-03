@@ -7,6 +7,8 @@ use App\Models\Vps;
 use App\Models\Client;
 use App\Models\Server;
 use App\Models\Line; // Added this import for Line model
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class VpsController extends Controller
 {
@@ -28,9 +30,7 @@ class VpsController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'server_ip' => ['required', 'string', 'max:45'], // IPv6 can be up to 45 chars
-            'client_id' => ['required', 'exists:clients,id'],
-            'linename' => ['nullable', 'string', 'max:255'],
+            'server_ip' => ['required', 'string', 'max:45'],
             'serverdomain' => ['nullable', 'string', 'max:255'],
             'username' => ['nullable', 'string', 'max:255'],
             'password' => ['nullable', 'string', 'max:255'],
@@ -120,9 +120,61 @@ class VpsController extends Controller
     public function destroy(Vps $vps)
     {
         try {
+            // Start database transaction for data integrity
+            DB::beginTransaction();
+            Log::info('VPS deletion started', [
+                'vps_id' => $vps->id,
+                'vps_name' => $vps->name,
+                'vps_ip' => $vps->ip,
+                'client_id' => $vps->client_id,
+                'server_id' => $vps->server_id
+            ]);
+            // Log the deletion attempt
+            Log::info('VPS deletion started', [
+                'vps_id' => $vps->id,
+                'vps_name' => $vps->name,
+                'vps_ip' => $vps->ip,
+                'client_id' => $vps->client_id,
+                'server_id' => $vps->server_id
+            ]);
+            
+            // Store VPS details for logging
+            $vpsDetails = [
+                'id' => $vps->id,
+                'name' => $vps->name,
+                'ip' => $vps->ip,
+                'client_id' => $vps->client_id,
+                'server_id' => $vps->server_id
+            ];
+                        
+            // Check if VPS has a line assigned and log it
+            if ($vps->linename) {
+                Log::info('VPS has line assigned, will be unassigned', [
+                    'vps_id' => $vps->id,
+                    'linename' => $vps->linename
+                ]);
+            }
+            
+            // Delete the VPS
             $vps->delete();
-            return redirect()->route('vps.index')->with('status', 'VPS deleted successfully.');
+            
+            // Commit transaction
+            DB::commit();
+            
+            Log::info('VPS deleted successfully', $vpsDetails);
+            
+            return redirect()->route('vps.index')->with('status', 'VPS "' . ($vpsDetails['name'] ?? 'ID: ' . $vpsDetails['id']) . '" deleted successfully.');
+            
         } catch (\Exception $e) {
+            // Rollback transaction on error
+            DB::rollBack();
+            
+            Log::error('VPS deletion failed', [
+                'vps_id' => $vps->id ?? 'unknown',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             return back()->withErrors(['error' => 'Failed to delete VPS: ' . $e->getMessage()]);
         }
     }
@@ -166,16 +218,102 @@ class VpsController extends Controller
                 ], 400);
             }
 
+            // Get client and servers
+            $client = $vps->client;
+            $servers = $client->servers;
+
+            // Build domain configurations array
+            $domainConfigs = [];
+            foreach ($servers as $server) {
+                if ($server->domain) {
+                    // Split domains by comma and trim whitespace
+                    $domains = array_map('trim', explode(',', $server->domain));
+                    
+                    foreach ($domains as $domain) {
+                        if ($domain) {
+                            if (str_contains($domain, '*')) {
+                                if (str_starts_with($domain, '*.')) {
+                                    // Remove *. from the beginning
+                                    $cleanDomain = ltrim($domain, '*.');
+                                    $domainConfigs[] = [
+                                        'main_domain' => $line->username . '.' . $cleanDomain,
+                                        'proxy' => $cleanDomain
+                                    ];
+                                }
+                            } else {
+                                // Non-wildcard domain - use as is
+                                $domainConfigs[] = [
+                                    'main_domain' => $domain,
+                                    'proxy' => $domain
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add line's username with client's server domain
+            $domainConfigs[] = [
+                'main_domain' => $line->username . '.' . $client->domain,
+                'proxy' => $client->domain
+            ];
+
+            if (empty($domainConfigs)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No valid domains found for configuration'
+                ], 400);
+            }
+
+            // Check VPS nginx status and configure
+            try {
+                $sshService = new \App\Services\SSHService($vps->ip, $vps->username, $vps->password);
+                $sshService->connect();
+
+                // Check nginx status
+                $nginxStatus = $sshService->checkNginxStatus();
+                
+                if (!$nginxStatus['installed'] || !$nginxStatus['running']) {
+                    // Install nginx if not installed or not running
+                    \Illuminate\Support\Facades\Log::info('Installing nginx on VPS', ['vps_id' => $vps->id, 'ip' => $vps->ip]);
+                    $sshService->installNginxProxy();
+                }
+
+                // Configure nginx with domain configurations
+                \Illuminate\Support\Facades\Log::info('Configuring nginx with domain configs', [
+                    'vps_id' => $vps->id,
+                    'domain_configs' => $domainConfigs
+                ]);
+                
+                $sshService->configureNginxWithDomainConfigs($domainConfigs);
+                
+                $sshService->disconnect();
+                
+            } catch (\Exception $sshException) {
+                \Illuminate\Support\Facades\Log::error('SSH/Nginx configuration failed', [
+                    'vps_id' => $vps->id,
+                    'error' => $sshException->getMessage()
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to configure nginx: ' . $sshException->getMessage()
+                ], 500);
+            }
+
             // Update VPS with line information
             $vps->update([
                 'linename' => $line->username,
-                'serverdomain' => $line->username . '.' . $vps->client->domain
+                'serverdomain' => $line->username . '.' . $client->domain,
+                'domains' => json_encode($domainConfigs)
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Line assigned to VPS successfully'
+                'message' => 'Line assigned to VPS successfully and nginx configured',
+                'domain_configs' => $domainConfigs
             ]);
+            
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -208,6 +346,92 @@ class VpsController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error unassigning line: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Configure nginx on VPS with domain configurations
+     */
+    public function configureNginxOnVps(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'domain_configs' => 'required|array',
+                'domain_configs.*.main_domain' => 'required|string',
+                'domain_configs.*.proxy' => 'required|string'
+            ]);
+
+            // Get the first VPS from the array
+            $vpsInstances = Vps::all();
+            if ($vpsInstances->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No VPS instances found'
+                ], 404);
+            }
+
+            $vps = $vpsInstances->first();
+
+            // Check if VPS has required credentials
+            if (!$vps->ip || !$vps->username || !$vps->password) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'VPS missing required credentials (IP, username, or password)'
+                ], 400);
+            }
+
+            // Configure nginx on VPS
+            try {
+                $sshService = new \App\Services\SSHService($vps->ip, $vps->username, $vps->password);
+                $sshService->connect();
+
+                // Check nginx status
+                $nginxStatus = $sshService->checkNginxStatus();
+                
+                if (!$nginxStatus['installed'] || !$nginxStatus['running']) {
+                    // Install nginx if not installed or not running
+                    \Illuminate\Support\Facades\Log::info('Installing nginx on VPS', ['vps_id' => $vps->id, 'ip' => $vps->ip]);
+                    $sshService->installNginxProxy();
+                }
+
+                // Configure nginx with domain configurations
+                \Illuminate\Support\Facades\Log::info('Configuring nginx with domain configs', [
+                    'vps_id' => $vps->id,
+                    'domain_configs' => $validated['domain_configs']
+                ]);
+                
+                $sshService->configureNginxWithDomainConfigs($validated['domain_configs']);
+                
+                $sshService->disconnect();
+                
+            } catch (\Exception $sshException) {
+                \Illuminate\Support\Facades\Log::error('SSH/Nginx configuration failed', [
+                    'vps_id' => $vps->id,
+                    'error' => $sshException->getMessage()
+                ]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to configure nginx: ' . $sshException->getMessage()
+                ], 500);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Nginx configured successfully on VPS',
+                'vps_used' => [
+                    'id' => $vps->id,
+                    'name' => $vps->name,
+                    'ip' => $vps->ip
+                ],
+                'domain_configs' => $validated['domain_configs']
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error configuring nginx: ' . $e->getMessage()
             ], 500);
         }
     }
