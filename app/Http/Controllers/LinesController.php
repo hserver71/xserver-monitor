@@ -122,8 +122,8 @@ class LinesController extends Controller
             // Configure nginx on each VPS
             $configuredVpsCount = 0;
             $errors = [];
-            $targetVPS = Vps::where('username', null)
-                ->orWhere('username', '')
+            $targetVPS = Vps::where('linename', null)
+                ->orWhere('linename', '')
                 ->first();
             if (!$targetVPS) {
                 return response()->json(['success' => false, 'message' => 'No VPS found for configuration'], 400);

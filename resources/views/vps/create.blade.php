@@ -53,7 +53,7 @@
                         </div>
                         <div class="col-md-6">
                             <label for="password" class="form-label">SSH Password <span class="text-danger">*</span></label>
-                            <input type="password" class="form-control" id="password" name="password" required placeholder="Enter SSH password">
+                            <input type="text" class="form-control" id="password" name="password" required placeholder="Enter SSH password">
                             <small class="form-text text-muted">Password for SSH connection</small>
                         </div>
                     </div>

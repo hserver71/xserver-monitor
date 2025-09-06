@@ -7,6 +7,7 @@ use App\Models\Vps;
 use App\Models\Client;
 use App\Models\Server;
 use App\Models\Line; // Added this import for Line model
+use App\Services\SSHService; // Added this import for SSH service
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -32,23 +33,23 @@ class VpsController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'server_ip' => ['required', 'string', 'max:45'],
             'serverdomain' => ['nullable', 'string', 'max:255'],
-            'username' => ['nullable', 'string', 'max:255'],
-            'password' => ['nullable', 'string', 'max:255'],
+            'username' => ['required', 'string', 'max:255'], // Made required for SSH
+            'password' => ['required', 'string', 'max:255'], // Made required for SSH
         ]);
 
         try {
-            // Find or create a default client if not provided
-            if (empty($validated['client_id'])) {
-                $client = Client::firstOrCreate(
-                    ['name' => 'Default Client'],
-                    [
-                        'name' => 'Default Client',
-                        'ip' => '127.0.0.1',
-                        'domain' => 'default.local'
-                    ]
-                );
-                $validated['client_id'] = $client->id;
-            }
+            $clientId = null;
+            
+            // Optionally create a default client (you can remove this if you don't want any default client)
+            $client = Client::firstOrCreate(
+                ['name' => 'Default Client'],
+                [
+                    'name' => 'Default Client',
+                    'ip' => '127.0.0.1',
+                    'domain' => 'default.local'
+                ]
+            );
+            $clientId = $client->id;
 
             // Find or create a server with the provided IP
             $server = Server::firstOrCreate(
@@ -57,7 +58,7 @@ class VpsController extends Controller
                     'name' => 'Server ' . $validated['server_ip'],
                     'ip' => $validated['server_ip'],
                     'domain' => $validated['server_ip'],
-                    'client_id' => $validated['client_id']
+                    'client_id' => $clientId // Use the client ID or null
                 ]
             );
 
@@ -65,15 +66,51 @@ class VpsController extends Controller
             $vps = Vps::create([
                 'name' => $validated['name'],
                 'ip' => $validated['server_ip'], // Store server IP in the ip field
-                'client_id' => $validated['client_id'],
+                'client_id' => $clientId, // Use the client ID or null
                 'server_id' => $server->id,
                 'linename' => $validated['linename'] ?? null,
                 'serverdomain' => $validated['serverdomain'] ?? null,
-                'username' => $validated['username'] ?? null,
-                'password' => $validated['password'] ?? null,
+                'username' => $validated['username'],
+                'password' => $validated['password'],
             ]);
+
+            // Install nginx via SSH
+            try {
+                Log::info('Starting nginx installation on VPS', [
+                    'vps_id' => $vps->id,
+                    'ip' => $vps->ip,
+                    'username' => $vps->username
+                ]);
+
+                $sshService = new SSHService($vps->ip, $vps->username, $vps->password);
+                $sshService->connect();
+                $nginxStatus = $sshService->checkNginxStatus();
+                
+                if (!$nginxStatus['installed'] || !$nginxStatus['running']) {
+                    // Install nginx if not installed or not running
+                    Log::info('Installing nginx on VPS', ['vps_id' => $vps->id, 'ip' => $vps->ip]);
+                    $sshService->installNginxProxy();
+                    Log::info('Nginx installation completed successfully', ['vps_id' => $vps->id]);
+                } else {
+                    Log::info('Nginx already installed and running on VPS', ['vps_id' => $vps->id]);
+                }
+                
+                $sshService->disconnect();
+                
+            } catch (\Exception $sshException) {
+                Log::error('SSH/Nginx installation failed', [
+                    'vps_id' => $vps->id,
+                    'error' => $sshException->getMessage()
+                ]);
+                
+                // VPS was created successfully, but nginx installation failed
+                return redirect()->route('vps.index')->with([
+                    'status' => 'VPS created successfully, but nginx installation failed: ' . $sshException->getMessage(),
+                    'warning' => true
+                ]);
+            }
             
-            return redirect()->route('vps.index')->with('status', 'VPS created successfully.');
+            return redirect()->route('vps.index')->with('status', 'VPS created successfully and nginx installed.');
             
         } catch (\Exception $e) {
             return back()->withErrors(['error' => 'Failed to create VPS: ' . $e->getMessage()])->withInput();
