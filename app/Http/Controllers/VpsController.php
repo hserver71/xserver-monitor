@@ -339,6 +339,10 @@ class VpsController extends Controller
             }
 
             // Update VPS with line information
+            // Update line with assignment information
+            $line->update([
+                'assigned_at' => now()
+            ]);
             $vps->update([
                 'linename' => $line->username,
                 'serverdomain' => $line->username . '.' . $client->domain,
@@ -370,6 +374,13 @@ class VpsController extends Controller
             $vps = Vps::findOrFail($validated['vps_id']);
 
             // Clear line information from VPS
+            // Find and clear line assignment information
+            $line = Line::where('username', $vps->linename)->first();
+            if ($line) {
+                $line->update([
+                    'assigned_at' => null
+                ]);
+            }
             $vps->update([
                 'linename' => null,
                 'serverdomain' => null,

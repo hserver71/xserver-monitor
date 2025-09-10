@@ -13,7 +13,12 @@ class Line extends Model
         'username',
         'password',
         'status',
-        'client_id'
+        'client_id',
+        'assigned_at'
+    ];
+
+    protected $casts = [
+        'assigned_at' => 'datetime'
     ];
 
     // Relationships
@@ -26,4 +31,4 @@ class Line extends Model
     {
         return $this->hasMany(Vps::class);
     }
-} 
+}

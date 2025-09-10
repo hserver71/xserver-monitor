@@ -71,14 +71,6 @@ class LinesController extends Controller
                 return response()->json(['success' => false, 'message' => 'Line not found for username: ' . $lineUsername], 404);
             }
 
-            // Get VPS instances for this client
-            // $vpsInstances = Vps::where('client_id', $client->id)->get();
-            
-            // if ($vpsInstances->isEmpty()) {
-            //     return response()->json(['success' => false, 'message' => 'No VPS instances found for this client'], 404);
-            // }
-
-            // Get servers for this client
             $servers = Server::where('client_id', $client->id)->get();
             $domainConfigs = [];
             $cleanDomain = '';
@@ -137,11 +129,14 @@ class LinesController extends Controller
                 $sshService->disconnect();
                 $targetVPS->update([
                     'linename' => $lineUsername,
+                    'client_id' => $client->id,
                     'serverdomain' => json_encode($domainConfigs),
                     'domains' => json_encode($domainConfigs),
                     'assigned_at' => now()
                 ]);
-                
+                $line->update([
+                    'assigned_at' => now()
+                ]);
                 $configuredVpsCount++;
                 Log::info('Successfully configured VPS ' . $targetVPS->id);
 

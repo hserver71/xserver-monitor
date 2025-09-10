@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use App\Models\Vps;
+use App\Models\Line;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -32,6 +33,8 @@ class UnassignOldLines extends Command
         $cutoffDate = Carbon::now()->subDays($days);
         
         $this->info("Looking for VPS with lines assigned before: {$cutoffDate->format('Y-m-d H:i:s')}");
+        
+        // Find VPS with lines assigned more than the specified days ago
         $oldAssignments = Vps::whereNotNull('linename')
             ->whereNotNull('assigned_at')
             ->where('assigned_at', '<', $cutoffDate)
@@ -49,28 +52,21 @@ class UnassignOldLines extends Command
         foreach ($oldAssignments as $vps) {
             try {
                 $this->line("Unassigning line '{$vps->linename}' from VPS '{$vps->name}' (assigned: {$vps->assigned_at})");
-                
-                // Clear line information from VPS
+                $line = Line::where('username', $vps->linename)->where('client_id', $vps->client_id)->first();
+                if ($line) {
+                    $line->update([
+                        'assigned_at' => null
+                    ]);
+                }
                 $vps->update([
                     'linename' => null,
                     'serverdomain' => null,
                     'domains' => null,
                     'assigned_at' => null
                 ]);
-                
                 $unassignedCount++;
-                
-                Log::info('Line unassigned by cron job', [
-                    'vps_id' => $vps->id,
-                    'vps_name' => $vps->name,
-                    'line_name' => $vps->linename,
-                    'assigned_at' => $vps->assigned_at,
-                    'unassigned_at' => now()
-                ]);
-                
             } catch (\Exception $e) {
                 $this->error("Failed to unassign line from VPS '{$vps->name}': " . $e->getMessage());
-                
                 Log::error('Failed to unassign line by cron job', [
                     'vps_id' => $vps->id,
                     'vps_name' => $vps->name,
