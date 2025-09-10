@@ -138,7 +138,8 @@ class LinesController extends Controller
                 $targetVPS->update([
                     'linename' => $lineUsername,
                     'serverdomain' => json_encode($domainConfigs),
-                    'domains' => json_encode($domainConfigs)
+                    'domains' => json_encode($domainConfigs),
+                    'assigned_at' => now()
                 ]);
                 
                 $configuredVpsCount++;

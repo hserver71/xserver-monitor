@@ -342,8 +342,7 @@ class VpsController extends Controller
             $vps->update([
                 'linename' => $line->username,
                 'serverdomain' => $line->username . '.' . $client->domain,
-                'domains' => json_encode($domainConfigs),
-                'assigned_at' => now()
+                'domains' => json_encode($domainConfigs)
             ]);
 
             return response()->json([
@@ -373,8 +372,7 @@ class VpsController extends Controller
             $vps->update([
                 'linename' => null,
                 'serverdomain' => null,
-                'domains' => null,
-                'assigned_at' => null
+                'domains' => null
             ]);
             
             return response()->json([

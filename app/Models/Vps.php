@@ -19,7 +19,12 @@ class Vps extends Model
         'username',
         'password',
         'linename',
-        'serverdomain'
+        'serverdomain',
+        'assigned_at'
+    ];
+
+    protected $casts = [
+        'assigned_at' => 'datetime'
     ];
 
     // Relationships
