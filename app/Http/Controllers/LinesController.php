@@ -77,8 +77,6 @@ class LinesController extends Controller
             $domainConfigs = array();; // single object
 
             foreach ($servers as $server) {
-                Log::info('Server: ' . $server->domain);
-
                 if ($server->domain) {
                     $domains = array_map('trim', explode(',', $server->domain));
 
@@ -87,9 +85,9 @@ class LinesController extends Controller
                             $cleanDomain = ltrim($domain, '*.');
                             $domainConfigs[] = [
                                 'main_domain' => $lineUsername . '.' . $cleanDomain,
-                                'proxy' => $cleanDomain,
+                                'proxy' => $server->ip,
                             ];
-                            break 2; // stop both loops after first * domain
+                            break 2; 
                         }
                     }
                 }
