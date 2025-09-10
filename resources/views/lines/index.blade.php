@@ -26,8 +26,9 @@
                                                data-client-id="{{ $client->id }}" 
                                                data-client-domain="{{ $client->domain }}">
                                                 <div class="d-flex justify-content-between align-items-center" style="cursor: pointer;width: 100%;">
-                                                    <div>
+                                                    <div style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
                                                         <h6 class="mb-1">{{ $client->name }}</h6>
+
                                                         <small class="text-muted">{{ $client->ip }} - {{ $client->domain }}</small>
                                                     </div>
                                                     <i class="fas fa-chevron-right"></i>
@@ -71,10 +72,18 @@
                                 </div>
                                 <div class="card-body p-0">
                                     <div class="list-group list-group-flush" id="vpsList">
-                                        <div class="text-center text-muted py-4">
-                                            <i class="fas fa-mouse-pointer fa-2x mb-2"></i>
-                                            <p>Select a line to view VPS</p>
-                                        </div>
+                                        @foreach($vps as $vpsItem)
+                                            <div class="d-flex justify-content-between align-items-center" style="cursor: pointer;width: 100%; padding: 10px;">
+                                                <div style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
+                                                    <h6><strong>  VPS  </strong></h6>
+                                                    <h6><strong>id {{ $vpsItem->id }} </strong></h6> 
+                                                    <h6><strong>{{ $vpsItem->name}}</strong></h6>
+                                                    <h6><strong>{{ $vpsItem->linename}}</strong></h6>
+                                                    <h6><small class="text-muted">Server: {{ $vpsItem->server_id }} | Client: {{ $vpsItem->client_id }}</small></h6>
+                                                    <button class="badge bg-primary border-none" onclick="vpsAction({{ $vpsItem->id }}, {{ $vpsItem->linename == null ? 'true' : 'false' }})"  >{{ $vpsItem->linename == null ? 'Assign' : 'Unassign' }}</button>
+                                                </div>
+                                            </div>
+                                        @endforeach
                                     </div>
                                 </div>
                             </div>
@@ -89,10 +98,54 @@
 
 @push('scripts')
 <script>
+// Global variables and functions
+let currentClientId = null;
+let currentLineId = null;
+
+// Global function for VPS action
+function vpsAction(vpsId, isAssigned) {
+    console.log('VPS action:', vpsId, isAssigned);
+    if (isAssigned) {
+        unassignLineFromVps(vpsId);
+    } else {
+        assignLineToVps(vpsId);
+    }
+}
+
+function unassignLineFromVps(vpsId) {
+    $.ajax({
+        url: '/api/unassign-line',
+        method: 'POST',
+        data: {
+            vps_id: vpsId
+        },
+        success: function(response) {
+            console.log('Unassign line response:', response);
+        }
+    });
+}
+
+function assignLineToVps(vpsId) {
+    console.log('Assigning line to VPS:', vpsId);
+    let lineId = currentLineId;
+    if (lineId == null) {
+        alert('Please select a line first');
+        return;
+    }
+    $.ajax({
+        url: '/api/assign-line',
+        method: 'POST',
+        data: {
+            line_id: lineId
+        },
+        success: function(response) {
+            console.log('Assign line response:', response);
+        }
+    });
+}
+
 $(document).ready(function() {
     console.log('Lines page loaded successfully'); // Debug log
-    let currentClientId = null;
-    let currentLineId = null;
 
     // Test button handler
     $('#testBtn').on('click', function() {
@@ -154,7 +207,7 @@ $(document).ready(function() {
         
         // Clear lines and VPS sections
         clearLinesSection();
-        clearVpsSection();
+        // clearVpsSection();
         
         // Show fetch button
         $('#fetchLinesBtn').show();
@@ -168,16 +221,11 @@ $(document).ready(function() {
         e.preventDefault();
         
         const lineId = $(this).data('line-id');
+        currentLineId = lineId; // Update current line ID
         
         // Update active state
         $('.line-item').removeClass('active');
         $(this).addClass('active');
-        
-        // Clear VPS section
-        clearVpsSection();
-        
-        // Fetch VPS for this line
-        fetchLineVps(lineId, currentClientId);
     });
 
     function fetchStoredLines(clientId) {
@@ -226,25 +274,6 @@ $(document).ready(function() {
                 console.log('AJAX error:', status, error); // Debug log
                 console.log('Response:', xhr.responseText); // Debug log
                 showError('Error fetching lines. Please try again.');
-            }
-        });
-    }
-
-    function fetchLineVps(lineId, clientId) {
-        currentLineId = lineId;
-        
-        $.ajax({
-            url: '/api/lines/line/' + lineId + '/client/' + clientId + '/vps',
-            method: 'GET',
-            success: function(response) {
-                if (response.success) {
-                    displayVps(response.vps);
-                } else {
-                    showError('Failed to fetch VPS: ' + response.message);
-                }
-            },
-            error: function(xhr) {
-                showError('Error fetching VPS. Please try again.');
             }
         });
     }
@@ -298,37 +327,6 @@ $(document).ready(function() {
                 return 'bg-warning';
             default:
                 return 'bg-secondary';
-        }
-    }
-
-    function displayVps(vpsInstances) {
-        const vpsList = $('#vpsList');
-        
-        if (vpsInstances && vpsInstances.length > 0) {
-            let html = '';
-            vpsInstances.forEach(function(vps) {
-                html += `
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="mb-1">VPS ${vps.id}</h6>
-                                <small class="text-muted">
-                                    Server: ${vps.server_id} | Client: ${vps.client_id}
-                                </small>
-                            </div>
-                            <span class="badge bg-primary">Active</span>
-                        </div>
-                    </div>
-                `;
-            });
-            vpsList.html(html);
-        } else {
-            vpsList.html(`
-                <div class="text-center text-muted py-4">
-                    <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
-                    <p>No VPS found for this line</p>
-                </div>
-            `);
         }
     }
 

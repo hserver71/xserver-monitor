@@ -363,7 +363,6 @@ class VpsController extends Controller
     {
         try {
             $validated = $request->validate([
-                'line_id' => 'required|exists:lines,id',
                 'vps_id' => 'required|exists:vps,id'
             ]);
 
@@ -372,9 +371,10 @@ class VpsController extends Controller
             // Clear line information from VPS
             $vps->update([
                 'linename' => null,
-                'serverdomain' => null
+                'serverdomain' => null,
+                'domains' => null
             ]);
-
+            
             return response()->json([
                 'success' => true,
                 'message' => 'Line unassigned from VPS successfully'
@@ -394,9 +394,9 @@ class VpsController extends Controller
     {
         try {
             $validated = $request->validate([
-                'domain_configs' => 'required|array',
-                'domain_configs.*.main_domain' => 'required|string',
-                'domain_configs.*.proxy' => 'required|string'
+                'domain_config' => 'required|array',
+                'domain_config.main_domain' => 'required|string',
+                'domain_config.proxy' => 'required|string'
             ]);
 
             // Get the first VPS from the array
@@ -469,6 +469,35 @@ class VpsController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error configuring nginx: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    public function assignDomainToVps(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'domain_config' => 'required|array',
+                'vps_id' => 'required|exists:vps,id'
+            ]);
+
+            $vps = Vps::findOrFail($validated['vps_id']);
+
+            $vps->update([
+                'domains' => json_encode($validated['domain_config'])
+            ]);
+            $sshService = new \App\Services\SSHService($vps->ip, $vps->username, $vps->password);
+            $sshService->connect();
+            $sshService->configureNginxWithDomainConfigs($validated['domain_config']);
+            $sshService->disconnect();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Domain assigned to VPS successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error assigning domain: ' . $e->getMessage()
             ], 500);
         }
     }

@@ -19,7 +19,8 @@ class LinesController extends Controller
     public function index()
     {
         $clients = Client::all();
-        return view('lines.index', compact('clients'));
+        $vps = Vps::all();
+        return view('lines.index', compact('clients', 'vps'));
     }
 
     /**
@@ -80,38 +81,27 @@ class LinesController extends Controller
             // Get servers for this client
             $servers = Server::where('client_id', $client->id)->get();
             $domainConfigs = [];
-            
+            $cleanDomain = '';
+            $domainConfigs = array();; // single object
+
             foreach ($servers as $server) {
                 Log::info('Server: ' . $server->domain);
+
                 if ($server->domain) {
                     $domains = array_map('trim', explode(',', $server->domain));
+
                     foreach ($domains as $domain) {
-                        if ($domain) {
-                            if (str_contains($domain, '*')) {                        
-                                if (str_starts_with($domain, '*.')) {
-                                    $cleanDomain = ltrim($domain, '*.');
-                                    $domainConfigs[] = [
-                                        'main_domain' => $lineUsername . '.' . $cleanDomain, 
-                                        'proxy' => $cleanDomain
-                                    ]; 
-                                }
-                            } else {
-                                // Non-wildcard domain
-                                $domainConfigs[] = [
-                                    'main_domain' => $domain,
-                                    'proxy' => $domain
-                                ];
-                            }
+                        if ($domain && str_starts_with($domain, '*.')) {
+                            $cleanDomain = ltrim($domain, '*.');
+                            $domainConfigs[] = [
+                                'main_domain' => $lineUsername . '.' . $cleanDomain,
+                                'proxy' => $cleanDomain,
+                            ];
+                            break 2; // stop both loops after first * domain
                         }
                     }
                 }
             }
-
-            // Add line's username with client's domain
-            $domainConfigs[] = [
-                'main_domain' => $lineUsername . '.' . $client->domain,
-                'proxy' => $client->domain
-            ];
 
             Log::info('Domain Configs: ' . json_encode($domainConfigs));
 
@@ -129,41 +119,28 @@ class LinesController extends Controller
                 return response()->json(['success' => false, 'message' => 'No VPS found for configuration'], 400);
             };
             try {
-                // Check if VPS has required credentials
                 if (!$targetVPS->ip || !$targetVPS->username || !$targetVPS->password) {
                     $errors[] = "VPS {$targetVPS->id} missing credentials (IP, username, or password)";
                 }
-
-                // Configure nginx on VPS
                 $sshService = new \App\Services\SSHService($targetVPS->ip, $targetVPS->username, $targetVPS->password);
                 $sshService->connect();
-
-                // Check nginx status
                 $nginxStatus = $sshService->checkNginxStatus();
-                
                 if (!$nginxStatus['installed'] || !$nginxStatus['running']) {
-                    // Install nginx if not installed or not running
                     Log::info('Installing nginx on VPS', ['vps_id' => $targetVPS->id, 'ip' => $targetVPS->ip]);
                     $sshService->installNginxProxy();
                 }
-
-                // Configure nginx with domain configurations
                 Log::info('Configuring nginx with domain configs', [
                     'vps_id' => $targetVPS->id,
                     'domain_configs' => $domainConfigs
                 ]);
-                
                 $sshService->configureNginxWithDomainConfigs($domainConfigs);
-                
                 $sshService->disconnect();
-
-                // Update VPS with line information
                 $targetVPS->update([
                     'linename' => $lineUsername,
                     'serverdomain' => json_encode($domainConfigs),
                     'domains' => json_encode($domainConfigs)
                 ]);
-
+                
                 $configuredVpsCount++;
                 Log::info('Successfully configured VPS ' . $targetVPS->id);
 
@@ -174,8 +151,6 @@ class LinesController extends Controller
                 ]);
                 $errors[] = "VPS {$targetVPS->id}: " . $sshException->getMessage();
             }
-            // foreach ($vpsInstances as $vps) {
-            // }
 
             if ($configuredVpsCount === 0) {
                 return response()->json([
