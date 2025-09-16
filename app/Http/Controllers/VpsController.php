@@ -239,6 +239,7 @@ class VpsController extends Controller
     public function assignLineToVps(Request $request)
     {
         try {
+            Log::info('Assigning line to VPS', $request->all());
             $validated = $request->validate([
                 'line_id' => 'required|exists:lines,id',
                 'vps_id' => 'required|exists:vps,id'
@@ -364,6 +365,9 @@ class VpsController extends Controller
         }
     }
 
+    /**
+     * Unassign line from VPS
+     */
     public function unassignLineFromVps(Request $request)
     {
         try {

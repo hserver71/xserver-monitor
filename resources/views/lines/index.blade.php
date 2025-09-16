@@ -80,7 +80,7 @@
                                                     <h6><strong>{{ $vpsItem->name}}</strong></h6>
                                                     <h6><strong>{{ $vpsItem->linename}}</strong></h6>
                                                     <h6><small class="text-muted">Server: {{ $vpsItem->server_id }} | Client: {{ $vpsItem->client_id }}</small></h6>
-                                                    <button class="badge bg-primary border-none" onclick="vpsAction({{ $vpsItem->id }}, {{ $vpsItem->linename == null ? 'true' : 'false' }})"  >{{ $vpsItem->linename == null ? 'Assign' : 'Unassign' }}</button>
+                                                    <button class="badge bg-primary border-none" onclick="vpsAction({{ $vpsItem->id }}, {{ $vpsItem->linename == null ? false : true }})"  >{{ $vpsItem->linename == null ? 'Assign' : 'Unassign' }}</button>
                                                 </div>
                                             </div>
                                         @endforeach
@@ -104,7 +104,10 @@ let currentLineId = null;
 
 // Global function for VPS action
 function vpsAction(vpsId, isAssigned) {
-    console.log('VPS action:', vpsId, isAssigned);
+    if(currentLineId == null) {
+        alert('Please select a line first');
+        return;
+    }
     if (isAssigned) {
         unassignLineFromVps(vpsId);
     } else {
@@ -136,7 +139,8 @@ function assignLineToVps(vpsId) {
         url: '/api/assign-line',
         method: 'POST',
         data: {
-            line_id: lineId
+            line_id: lineId,
+            vps_id: vpsId
         },
         success: function(response) {
             console.log('Assign line response:', response);
