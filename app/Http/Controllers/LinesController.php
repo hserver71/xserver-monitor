@@ -50,7 +50,7 @@ class LinesController extends Controller
             // Extract domain from origin (remove protocol and port)
             $parsedUrl = parse_url($origin);
             $clientIp = $request->header('X-Real-IP');
-            
+            Log::info('Client IP: ' . $clientIp);
             if (!$clientIp) {
                 return response()->json(['success' => false, 'message' => 'Could not parse client domain from origin'], 400);
             }
