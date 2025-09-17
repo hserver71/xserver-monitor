@@ -42,3 +42,5 @@ Route::post('/assign-line', [App\Http\Controllers\VpsController::class, 'assignL
 Route::post('/unassign-line', [App\Http\Controllers\VpsController::class, 'unassignLineFromVps']);
 
 Route::get('/get-servers', [App\Http\Controllers\Api\ServerApiController::class, 'getServers']);
+
+Route::get('/vps', [App\Http\Controllers\VpsController::class, 'getVps']);

@@ -80,7 +80,11 @@
                                                     <h6><strong>{{ $vpsItem->name}}</strong></h6>
                                                     <h6><strong>{{ $vpsItem->linename}}</strong></h6>
                                                     <h6><small class="text-muted">Server: {{ $vpsItem->server_id }} | Client: {{ $vpsItem->client_id }}</small></h6>
-                                                    <button class="badge bg-primary border-none" onclick="vpsAction({{ $vpsItem->id }}, {{ $vpsItem->linename == null ? false : true }})"  >{{ $vpsItem->linename == null ? 'Assign' : 'Unassign' }}</button>
+                                                    <button 
+                                                        class="badge border-none {{ $vpsItem->linename == null ? 'bg-primary' : 'bg-warning' }}" 
+                                                        onclick="vpsAction({{ $vpsItem->id }}, {{ $vpsItem->linename == null ? false : true }})"  
+                                                    >
+                                                    {{ $vpsItem->linename == null ? 'Assign' : 'Unassign' }}</button>
                                                 </div>
                                             </div>
                                         @endforeach
@@ -90,6 +94,21 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" aria-labelledby="loadingModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center py-4">
+                <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <h5 class="mb-2" id="loadingModalTitle">Processing...</h5>
+                <p class="text-muted mb-0" id="loadingModalMessage">Please wait while we process your request.</p>
             </div>
         </div>
     </div>
@@ -104,10 +123,7 @@ let currentLineId = null;
 
 // Global function for VPS action
 function vpsAction(vpsId, isAssigned) {
-    if(currentLineId == null) {
-        alert('Please select a line first');
-        return;
-    }
+    console.log('VPS action:', isAssigned);
     if (isAssigned) {
         unassignLineFromVps(vpsId);
     } else {
@@ -116,16 +132,36 @@ function vpsAction(vpsId, isAssigned) {
 }
 
 function unassignLineFromVps(vpsId) {
+    // Show loading modal
+    showLoadingModal('Unassigning Line', 'Please wait while we unassign the line from VPS...');
+    
     $.ajax({
         url: '/api/unassign-line',
         method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        },
         data: {
             vps_id: vpsId
         },
         success: function(response) {
             console.log('Unassign line response:', response);
+            hideLoadingModal();
+            
+            if (response.success) {
+                showSuccessMessage(response.message || 'Line unassigned successfully');
+                refreshVpsList();
+            } else {
+                showError(response.message || 'Failed to unassign line');
+            }
+        },
+        error: function(xhr, status, error) {
+            console.log('Unassign error:', status, error);
+            hideLoadingModal();
+            showError('Error unassigning line: ' + error);
         }
     });
+    hideLoadingModal();
 }
 
 function assignLineToVps(vpsId) {
@@ -135,17 +171,115 @@ function assignLineToVps(vpsId) {
         alert('Please select a line first');
         return;
     }
+    
+    // Show loading modal
+    showLoadingModal('Assigning Line', 'Please wait while we assign the line to VPS and configure nginx...');
+    
     $.ajax({
         url: '/api/assign-line',
         method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        },
         data: {
             line_id: lineId,
             vps_id: vpsId
         },
         success: function(response) {
             console.log('Assign line response:', response);
+            hideLoadingModal();
+            
+            if (response.success) {
+                showSuccessMessage(response.message || 'Line assigned successfully');
+                refreshVpsList();
+            } else {
+                showError(response.message || 'Failed to assign line');
+            }
+        },
+        error: function(xhr, status, error) {
+            console.log('Assign error:', status, error);
+            hideLoadingModal();
+            showError('Error assigning line: ' + error);
         }
     });
+}
+
+// Helper functions (moved to global scope)
+function showSuccessMessage(message) {
+    alert('Success: ' + message);
+}
+
+function showError(message) {
+    alert('Error: ' + message);
+}
+
+function showLoadingModal(title = 'Processing...', message = 'Please wait while we process your request.') {
+    $('#loadingModalTitle').text(title);
+    $('#loadingModalMessage').text(message);
+    $('#loadingModal').modal('show');
+}
+
+function hideLoadingModal() {
+    console.log('Hiding loading modal');
+    $('#loadingModal').modal('hide');
+}
+
+function refreshVpsList() {
+    if (!currentClientId) {
+        console.log('No current client selected, skipping VPS refresh');
+        return;
+    }
+    
+    console.log('Refreshing VPS list for client:', currentClientId);
+    
+    $.ajax({
+        url: '/api/vps',
+        method: 'GET',
+        success: function(response) {
+            console.log('VPS refresh response:', response);
+            if (response.success && response.vps) {
+                displayVpsList(response.vps);
+            }
+        },
+        error: function(xhr, status, error) {
+            console.log('Error refreshing VPS list:', status, error);
+        }
+    });
+    hideLoadingModal();
+}
+
+function displayVpsList(vpsList) {
+    const vpsContainer = $('#vpsList');
+    
+    if (vpsList && vpsList.length > 0) {
+        let html = '';
+        vpsList.forEach(function(vpsItem) {
+            const isAssigned = vpsItem.linename !== null && vpsItem.linename !== '';
+            const buttonText = isAssigned ? 'Unassign' : 'Assign';
+            const buttonClass = isAssigned ? 'bg-warning' : 'bg-primary';
+            
+            html += `
+                <div class="d-flex justify-content-between align-items-center" style="cursor: pointer;width: 100%; padding: 10px;">
+                    <div style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
+                        <h6><strong>VPS</strong></h6>
+                        <h6><strong>id ${vpsItem.id}</strong></h6> 
+                        <h6><strong>${vpsItem.name}</strong></h6>
+                        <h6><strong>${vpsItem.linename || ''}</strong></h6>
+                        <h6><small class="text-muted">Server: ${vpsItem.server_id} | Client: ${vpsItem.client_id}</small></h6>
+                        <button class="badge ${buttonClass} border-none" onclick="vpsAction(${vpsItem.id}, ${isAssigned})">${buttonText}</button>
+                    </div>
+                </div>
+            `;
+        });
+        vpsContainer.html(html);
+    } else {
+        vpsContainer.html(`
+            <div class="text-center text-muted py-4">
+                <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                <p>No VPS found for this client</p>
+            </div>
+        `);
+    }
 }
 
 $(document).ready(function() {
@@ -175,6 +309,8 @@ $(document).ready(function() {
             return;
         }
         
+        showLoadingModal('Fetching Lines', 'Please wait while we fetch and store lines from the API...');
+        
         $.ajax({
             url: '/api/lines/client/' + currentClientId + '/fetch-store',
             method: 'POST',
@@ -182,6 +318,8 @@ $(document).ready(function() {
                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
             },
             success: function(response) {
+                hideLoadingModal();
+                
                 if (response.success) {
                     alert(response.message);
                     // Refresh the lines display
@@ -191,9 +329,11 @@ $(document).ready(function() {
                 }
             },
             error: function(xhr, status, error) {
+                hideLoadingModal();
                 alert('Error fetching lines: ' + error);
             }
         });
+        hideLoadingModal();
     });
 
     // Client click handler
@@ -351,11 +491,6 @@ $(document).ready(function() {
                 <p>Select a line to view VPS</p>
             </div>
         `);
-    }
-
-    function showError(message) {
-        // You can implement a better error display method
-        alert(message);
     }
 });
 </script>

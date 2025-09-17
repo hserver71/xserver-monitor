@@ -19,7 +19,8 @@ class Kernel extends ConsoleKernel
         
         // Run monitoring every 5 minutes
         $schedule->command('monitoring:run')->everyFiveMinutes();
-        
+        $schedule->command('lines:assign-free-vps')->dailyAt('01:00');
+        $schedule->command('lines:unassign-old')->dailyAt('01:00');        
         // Alternative schedules you can use:
         // $schedule->command('monitoring:run')->everyMinute();           // Every minute
         // $schedule->command('monitoring:run')->everyTwoMinutes();      // Every 2 minutes

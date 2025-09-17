@@ -222,112 +222,101 @@ class VpsController extends Controller
             ], 500);
         }
     }
-
-    public function assignLineToVps(Request $request)
+    
+    public function assignLineToVpsCore($lineId, $vpsId)
     {
-        try {
-            Log::info('Assigning line to VPS', $request->all());
-            $validated = $request->validate([
-                'line_id' => 'required|exists:lines,id',
-                'vps_id' => 'required|exists:vps,id'
-            ]);
-
-            $line = Line::findOrFail($validated['line_id']);
-            $vps = Vps::findOrFail($validated['vps_id']);
-
-            // Check if VPS already has a line assigned
-            if ($vps->linename) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'VPS already has a line assigned'
-                ], 400);
-            }
-
-            // Get client and servers
-            $client = Client::where('id', $line->client_id)->first();
-            $servers = Server::where('client_id', $client->id)->get();
-            $domainConfigs = [];
-            foreach ($servers as $server) {
-                if ($server->domain) {
-                    // Split domains by comma and trim whitespace
-                    $domains = array_map('trim', explode(',', $server->domain));
-                    
-                    foreach ($domains as $domain) {
-                        if ($domain) {
-                            if (str_contains($domain, '*')) {
-                                if (str_starts_with($domain, '*.')) {
-                                    // Remove *. from the beginning
-                                    $cleanDomain = ltrim($domain, '*.');
-                                    $domainConfigs[] = [
-                                        'main_domain' => $domain,
-                                        'proxy' => $server->ip
-                                    ];
-                                }
-                            } 
-                        }
+        $line = Line::findOrFail($lineId);
+        $vps = Vps::findOrFail($vpsId);
+       
+        if ($vps->linename) {
+            throw new \Exception('VPS already has a line assigned');
+        }
+        $client = Client::where('id', $line->client_id)->first();
+        $servers = Server::where('client_id', $client->id)->get();
+        $domainConfigs = [];
+        
+        foreach ($servers as $server) {
+            if ($server->domain) {
+                // Split domains by comma and trim whitespace
+                $domains = array_map('trim', explode(',', $server->domain));
+                
+                foreach ($domains as $domain) {
+                    if ($domain) {
+                        if (str_contains($domain, '*')) {
+                            if (str_starts_with($domain, '*.')) {
+                                // Remove *. from the beginning
+                                $cleanDomain = ltrim($domain, '*.');
+                                $domainConfigs[] = [
+                                    'main_domain' => $domain,
+                                    'proxy' => $server->ip
+                                ];
+                            }
+                        } 
                     }
                 }
             }
+        }
 
-            if (empty($domainConfigs)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No valid domains found for configuration'
-                ], 400);
-            }
+        if (empty($domainConfigs)) {
+            throw new \Exception('No valid domains found for configuration');
+        }
 
-            // Check VPS nginx status and configure
-            try {
-                $sshService = new \App\Services\SSHService($vps->ip, $vps->username, $vps->password);
-                $sshService->connect();
+        // Check VPS nginx status and configure
+        $sshService = new \App\Services\SSHService($vps->ip, $vps->username, $vps->password);
+        $sshService->connect();
 
-                // Check nginx status
-                $nginxStatus = $sshService->checkNginxStatus();
-                
-                if (!$nginxStatus['installed'] || !$nginxStatus['running']) {
-                    Log::info('Installing nginx on VPS', ['vps_id' => $vps->id, 'ip' => $vps->ip]);
-                    $sshService->installNginxProxy();
-                }
+        // Check nginx status
+        $nginxStatus = $sshService->checkNginxStatus();
+        
+        if (!$nginxStatus['installed'] || !$nginxStatus['running']) {
+            Log::info('Installing nginx on VPS', ['vps_id' => $vps->id, 'ip' => $vps->ip]);
+            $sshService->installNginxProxy();
+        }
 
-                // Configure nginx with domain configurations
-                \Illuminate\Support\Facades\Log::info('Configuring nginx with domain configs', [
-                    'vps_id' => $vps->id,
-                    'domain_configs' => $domainConfigs
-                ]);
-                
-                $sshService->configureNginxWithDomainConfigs($domainConfigs);
-                
-                $sshService->disconnect();
-                
-            } catch (\Exception $sshException) {
-                \Illuminate\Support\Facades\Log::error('SSH/Nginx configuration failed', [
-                    'vps_id' => $vps->id,
-                    'error' => $sshException->getMessage()
-                ]);
-                
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to configure nginx: ' . $sshException->getMessage()
-                ], 500);
-            }
+        // Configure nginx with domain configurations
+        Log::info('Configuring nginx with domain configs', [
+            'vps_id' => $vps->id,
+            'domain_configs' => $domainConfigs
+        ]);
+        
+        $sshService->configureNginxWithDomainConfigs($domainConfigs);
+        $sshService->disconnect();
 
-            $line->update([
-                'assigned_at' => now()
-            ]);
-            $vps->update([
-                'linename' => $line->username,
-                'serverdomain' => $line->username . '.' . $client->domain,
-                'domains' => json_encode($domainConfigs),
-                'assigned_at' => now()
-            ]);
+        // Update line and VPS records
+        $line->update([
+            'assigned_at' => now()
+        ]);
+        $vps->update([
+            'linename' => $line->username,
+            'serverdomain' => $line->username . '.' . $client->domain,
+            'domains' => json_encode($domainConfigs),
+            'assigned_at' => now()
+        ]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Line assigned to VPS successfully and nginx configured',
-                'domain_configs' => $domainConfigs
-            ]);
+        return [
+            'success' => true,
+            'message' => 'Line assigned to VPS successfully and nginx configured',
+            'domain_configs' => $domainConfigs
+        ];
+    }
+
+    public function assignLineToVps(Request $request)
+    {
+        $validated = $request->validate([
+            'line_id' => 'required|exists:lines,id',
+            'vps_id' => 'required|exists:vps,id'
+        ]);
+        
+        try {
+            $result = $this->assignLineToVpsCore($validated['line_id'], $validated['vps_id']);
+            return response()->json($result);
             
         } catch (\Exception $e) {
+            Log::error('SSH/Nginx configuration failed', [
+                'vps_id' => $validated['vps_id'] ?? 'unknown',
+                'error' => $e->getMessage()
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Error assigning line: ' . $e->getMessage()
@@ -368,6 +357,14 @@ class VpsController extends Controller
         }
     }
 
+    public function getVps()
+    {
+        $vps = Vps::all();
+        return response()->json([
+            'success' => true,
+            'vps' => $vps
+        ]);
+    }
     /**
      * Configure nginx on VPS with domain configurations
      */
