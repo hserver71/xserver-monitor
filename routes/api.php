@@ -40,3 +40,5 @@ Route::get('/check-line-status', [App\Http\Controllers\LinesController::class, '
 Route::get('/client/{clientId}/lines', [App\Http\Controllers\VpsController::class, 'getClientLines']);
 Route::post('/assign-line', [App\Http\Controllers\VpsController::class, 'assignLineToVps']);
 Route::post('/unassign-line', [App\Http\Controllers\VpsController::class, 'unassignLineFromVps']);
+
+Route::get('/get-servers', [App\Http\Controllers\Api\ServerApiController::class, 'getServers']);

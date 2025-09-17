@@ -55,7 +55,8 @@ class UnassignOldLines extends Command
                 $line = Line::where('username', $vps->linename)->where('client_id', $vps->client_id)->first();
                 if ($line) {
                     $line->update([
-                        'assigned_at' => null
+                        'assigned_at' => null,
+                        'status' => 'completed'
                     ]);
                 }
                 $vps->update([

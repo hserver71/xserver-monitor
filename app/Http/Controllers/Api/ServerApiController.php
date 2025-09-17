@@ -44,58 +44,20 @@ class ServerApiController extends Controller
     {   
 
         try {
-            // Validate request
             $request->validate([
                 'client_id' => 'required|exists:clients,id'
             ]);
 
             $client = Client::findOrFail($request->client_id);
-
-            // Check if we should use test mode
-            $useTestMode = $request->input('test_mode', false);
+$useTestMode = $request->input('test_mode', false);
             if ($useTestMode) {
-                Log::info('Using TEST MODE - will use mock data instead of real API call');
                 return $this->processTestData($client);
             }
-
-            // Build the client's API URL
             $clientApiUrl = $this->buildClientApiUrl($client->ip);
-            
-            Log::info('API URL built', [
-                'original_domain' => $client->domain,
-                'built_url' => $clientApiUrl,
-                'url_components' => parse_url($clientApiUrl)
-            ]);
-
-            // Test connection first
             $this->testConnection($clientApiUrl);
-
-            // Get current servers before API call
             $currentServers = Server::where('client_id', $client->id)->get();
             $currentServerCount = $currentServers->count();
             $currentServerIps = $currentServers->pluck('ip')->toArray();
-            
-            Log::info('Current servers in database', [
-                'client_id' => $client->id,
-                'current_server_count' => $currentServerCount,
-                'current_server_ips' => $currentServerIps,
-                'current_servers_detail' => $currentServers->toArray()
-            ]);
-
-            // Make HTTP request to client's domain with CORS handling
-            Log::info('Making HTTP request', [
-                'url' => $clientApiUrl,
-                'timeout' => 30,
-                'method' => 'GET',
-                'headers' => [
-                    'User-Agent' => 'Laravel-Server-Monitor/1.0',
-                    'Accept' => 'application/json, text/plain, */*',
-                    'Accept-Language' => 'en-US,en;q=0.9',
-                    'Cache-Control' => 'no-cache',
-                    'Pragma' => 'no-cache'
-                ]
-            ]);
-
             $startTime = microtime(true);
             $response = Http::timeout(30)
                 ->withHeaders([
@@ -109,13 +71,6 @@ class ServerApiController extends Controller
                 ->get($clientApiUrl);
             $requestTime = microtime(true) - $startTime;
 
-            Log::info('HTTP response received', [
-                'response_status' => $response->status(),
-                'response_headers' => $response->headers(),
-                'response_size' => strlen($response->body()),
-                'request_time_seconds' => round($requestTime, 3),
-                'response_body_preview' => substr($response->body(), 0, 500) . (strlen($response->body()) > 500 ? '...' : '')
-            ]);
 
             if (!$response->successful()) {
                 $errorDetails = [
@@ -125,10 +80,6 @@ class ServerApiController extends Controller
                     'body_preview' => substr($response->body(), 0, 200),
                     'url' => $clientApiUrl
                 ];
-                
-                Log::error('HTTP request failed', $errorDetails);
-                
-                // Provide more specific error messages
                 switch ($response->status()) {
                     case 404:
                         throw new \Exception('Client API endpoint not found (404). Please verify the URL: ' . $clientApiUrl);
@@ -144,33 +95,6 @@ class ServerApiController extends Controller
             }
 
             $apiData = $response->json();
-            
-            Log::info('API response parsed', [
-                'is_array' => is_array($apiData),
-                'data_type' => gettype($apiData),
-                'data_count' => is_array($apiData) ? count($apiData) : 'N/A',
-                'raw_response' => $response->body()
-            ]);
-            
-            // if (!$apiData || !is_array($apiData)) {
-            //     throw new \Exception('Invalid response format from client API. Expected array, got: ' . gettype($apiData));
-            // }
-
-            Log::info('API data validation passed', [
-                'data_count' => count($apiData),
-                'data_structure' => array_map(function($item) {
-                    return [
-                        'has_name' => isset($item['name']),
-                        'has_ip' => isset($item['ip']),
-                        'has_domain' => isset($item['domain']),
-                        'name_length' => isset($item['name']) ? strlen($item['name']) : 0,
-                        'ip_format' => isset($item['ip']) ? filter_var($item['ip'], FILTER_VALIDATE_IP) ? 'valid' : 'invalid' : 'missing'
-                    ];
-                }, $apiData)
-            ]);
-
-            // Start database transaction
-            Log::info('Starting database transaction');
             DB::beginTransaction();
             
             try {
@@ -180,8 +104,6 @@ class ServerApiController extends Controller
                 $createdCount = 0;
                 $errors = [];
                 $processedServers = [];
-
-                Log::info('Processing API data', ['total_items' => count($apiData)]);
 
                 foreach ($apiData as $index => $serverData) {
                     $itemDebug = [
@@ -232,14 +154,6 @@ class ServerApiController extends Controller
                                 'new_data' => $existingServer->toArray()
                             ];
 
-                            Log::info('Server updated', [
-                                'server_id' => $existingServer->id,
-                                'ip' => $serverData['server_ip'],
-                                'old_name' => $oldData['name'],
-                                'new_name' => $serverData['server_name'],
-                                'old_domain' => $oldData['domain_name'],
-                                'new_domain' => $serverData['domain_name'] ?? $oldData['domain_name']
-                            ]);
                         } else {
                             // Create new server
                             $newServer = Server::create([
@@ -256,12 +170,6 @@ class ServerApiController extends Controller
                                 'new_data' => $newServer->toArray()
                             ];
 
-                            Log::info('Server created', [
-                                'server_id' => $newServer->id,
-                                'name' => $serverData['server_name'],
-                                'ip' => $serverData['server_ip'],
-                                'domain' => $serverData['domain_name'] ?? null
-                            ]);
                         }
                     } catch (\Exception $e) {
                         $errorMsg = 'Error processing server ' . ($serverData['server_name'] ?? 'Unknown') . ': ' . $e->getMessage();
@@ -269,16 +177,6 @@ class ServerApiController extends Controller
                         Log::error('Server processing error', $itemDebug + ['error' => $errorMsg, 'trace' => $e->getTraceAsString()]);
                     }
                 }
-
-                Log::info('API data processing completed', [
-                    'total_processed' => count($apiData),
-                    'created_count' => $createdCount,
-                    'updated_count' => $updatedCount,
-                    'errors_count' => count($errors),
-                    'new_server_ips' => $newServerIps
-                ]);
-
-                // Remove servers that no longer exist in the API response
                 $removedCount = 0;
                 $serversToRemove = array_diff($currentServerIps, $newServerIps);
                 
@@ -291,13 +189,9 @@ class ServerApiController extends Controller
                         'ips_to_remove' => $serversToRemove,
                         'servers_detail' => $serversToDelete->toArray()
                     ]);
-
-                    $removedCount = $serversToDelete->delete();
-
-                    Log::info('Servers removed', [
-                        'removed_count' => $removedCount,
-                        'removed_ips' => $serversToRemove
-                    ]);
+                    $removedCount = Server::where('client_id', $client->id)
+                        ->whereIn('ip', $serversToRemove)
+                        ->delete();
                 } else {
                     Log::info('No servers to remove - all current servers exist in API response');
                 }
@@ -648,6 +542,19 @@ class ServerApiController extends Controller
                 'message' => 'Error processing test data: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function getServers()
+    {
+        $servers = Server::all();
+        $result = [];
+        foreach ($servers as $server) {
+            $result[] = [
+                'domain' => $server->domain,
+                'ip' => $server->ip,
+            ];
+        }
+        return response()->json($result);
     }
 
     /**

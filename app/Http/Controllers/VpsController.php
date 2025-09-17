@@ -40,17 +40,6 @@ class VpsController extends Controller
         try {
             $clientId = null;
             
-            // Optionally create a default client (you can remove this if you don't want any default client)
-            $client = Client::firstOrCreate(
-                ['name' => 'Default Client'],
-                [
-                    'name' => 'Default Client',
-                    'ip' => '127.0.0.1',
-                    'domain' => 'default.local'
-                ]
-            );
-            $clientId = $client->id;
-
             // Find or create a server with the provided IP
             $server = Server::firstOrCreate(
                 ['ip' => $validated['server_ip']],
@@ -58,7 +47,6 @@ class VpsController extends Controller
                     'name' => 'Server ' . $validated['server_ip'],
                     'ip' => $validated['server_ip'],
                     'domain' => $validated['server_ip'],
-                    'client_id' => $clientId // Use the client ID or null
                 ]
             );
 
@@ -66,7 +54,6 @@ class VpsController extends Controller
             $vps = Vps::create([
                 'name' => $validated['name'],
                 'ip' => $validated['server_ip'], // Store server IP in the ip field
-                'client_id' => $clientId, // Use the client ID or null
                 'server_id' => $server->id,
                 'linename' => $validated['linename'] ?? null,
                 'serverdomain' => $validated['serverdomain'] ?? null,
@@ -257,10 +244,8 @@ class VpsController extends Controller
             }
 
             // Get client and servers
-            $client = $vps->client;
-            $servers = $client->servers;
-
-            // Build domain configurations array
+            $client = Client::where('id', $line->client_id)->first();
+            $servers = Server::where('client_id', $client->id)->get();
             $domainConfigs = [];
             foreach ($servers as $server) {
                 if ($server->domain) {
@@ -274,27 +259,15 @@ class VpsController extends Controller
                                     // Remove *. from the beginning
                                     $cleanDomain = ltrim($domain, '*.');
                                     $domainConfigs[] = [
-                                        'main_domain' => $line->username . '.' . $cleanDomain,
-                                        'proxy' => $cleanDomain
+                                        'main_domain' => $domain,
+                                        'proxy' => $server->ip
                                     ];
                                 }
-                            } else {
-                                // Non-wildcard domain - use as is
-                                $domainConfigs[] = [
-                                    'main_domain' => $domain,
-                                    'proxy' => $domain
-                                ];
-                            }
+                            } 
                         }
                     }
                 }
             }
-
-            // Add line's username with client's server domain
-            $domainConfigs[] = [
-                'main_domain' => $line->username . '.' . $client->domain,
-                'proxy' => $client->domain
-            ];
 
             if (empty($domainConfigs)) {
                 return response()->json([
@@ -312,8 +285,7 @@ class VpsController extends Controller
                 $nginxStatus = $sshService->checkNginxStatus();
                 
                 if (!$nginxStatus['installed'] || !$nginxStatus['running']) {
-                    // Install nginx if not installed or not running
-                    \Illuminate\Support\Facades\Log::info('Installing nginx on VPS', ['vps_id' => $vps->id, 'ip' => $vps->ip]);
+                    Log::info('Installing nginx on VPS', ['vps_id' => $vps->id, 'ip' => $vps->ip]);
                     $sshService->installNginxProxy();
                 }
 
@@ -339,8 +311,6 @@ class VpsController extends Controller
                 ], 500);
             }
 
-            // Update VPS with line information
-            // Update line with assignment information
             $line->update([
                 'assigned_at' => now()
             ]);
@@ -380,16 +350,10 @@ class VpsController extends Controller
             // Clear line information from VPS
             // Find and clear line assignment information
             $line = Line::where('username', $vps->linename)->first();
-            if ($line) {
-                $line->update([
-                    'assigned_at' => null
-                ]);
-            }
             $vps->update([
                 'linename' => null,
                 'serverdomain' => null,
                 'domains' => null,
-                'assigned_at' => null
             ]);
             
             return response()->json([
@@ -486,35 +450,6 @@ class VpsController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error configuring nginx: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-    public function assignDomainToVps(Request $request)
-    {
-        try {
-            $validated = $request->validate([
-                'domain_config' => 'required|array',
-                'vps_id' => 'required|exists:vps,id'
-            ]);
-
-            $vps = Vps::findOrFail($validated['vps_id']);
-
-            $vps->update([
-                'domains' => json_encode($validated['domain_config'])
-            ]);
-            $sshService = new \App\Services\SSHService($vps->ip, $vps->username, $vps->password);
-            $sshService->connect();
-            $sshService->configureNginxWithDomainConfigs($validated['domain_config']);
-            $sshService->disconnect();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Domain assigned to VPS successfully'
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error assigning domain: ' . $e->getMessage()
             ], 500);
         }
     }

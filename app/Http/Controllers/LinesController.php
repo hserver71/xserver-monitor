@@ -84,8 +84,8 @@ class LinesController extends Controller
                         if ($domain && str_starts_with($domain, '*.')) {
                             $cleanDomain = ltrim($domain, '*.');
                             $domainConfigs[] = [
-                                'main_domain' => $lineUsername . '.' . $cleanDomain,
-                                'proxy' => $server->ip,
+                                'main_domain' => $server->ip,
+                                'proxy' => $cleanDomain,
                             ];
                             break 2; 
                         }
