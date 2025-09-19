@@ -35,7 +35,10 @@ class LinesController extends Controller
             if (!$lineUsername) {
                 return response()->json(['success' => false, 'message' => 'Line parameter is required'], 400);
             }
-
+            $vps = Vps::where('linename', $lineUsername)->first();
+            if ($vps) {
+                return response()->json(['success' => true, 'message' => 'VPS already has a line assigned', 'vps' => $vps], 200);
+            }
             // Get client's real IP address
             $clientIp = $request->ip();
             
@@ -84,8 +87,8 @@ class LinesController extends Controller
                         if ($domain && str_starts_with($domain, '*.')) {
                             $cleanDomain = ltrim($domain, '*.');
                             $domainConfigs[] = [
-                                'main_domain' => $server->ip,
-                                'proxy' => $cleanDomain,
+                                'main_domain' => $domain,
+                                'proxy' => $server->ip,
                             ];
                             break 2; 
                         }
@@ -133,7 +136,8 @@ class LinesController extends Controller
                     'assigned_at' => now()
                 ]);
                 $line->update([
-                    'assigned_at' => now()
+                    'assigned_at' => now(),
+                    'status' => 'Monitoring now'
                 ]);
                 $configuredVpsCount++;
                 Log::info('Successfully configured VPS ' . $targetVPS->id);

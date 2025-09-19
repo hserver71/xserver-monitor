@@ -36,7 +36,7 @@
                             <th>VPS Name</th>
                             <th>Server IP</th>
                             <th>Client</th>
-                            <th>Server</th>
+                            <th></th>
                             <th>Line Name</th>
                             <th>Server Domain</th>
                             <th>Created</th>

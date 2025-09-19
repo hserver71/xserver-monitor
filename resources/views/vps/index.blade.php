@@ -34,9 +34,9 @@
                         <tr>
                             <th>ID</th>
                             <th>VPS Name</th>
-                            <th>Server IP</th>
+                            <th>Client IP</th>
                             <th>Client</th>
-                            <th>Server</th>
+                            <th>Client Server</th>
                             <th>Line Name</th>
                             <th>Server Domain</th>
                             <th>Created</th>
@@ -103,31 +103,6 @@
     </div>
 </div>
 
-<!-- Lines Management Section -->
-<!-- <div class="card">
-    <div class="card-header">
-        <h5 class="mb-0">Lines Management</h5>
-    </div>
-    <div class="card-body">
-        <div class="row mb-3">
-            <div class="col-md-6">
-                <label for="client_filter" class="form-label">Select Client to View Lines</label>
-                <select class="form-select" id="client_filter" name="client_filter">
-                    <option value="">All Clients</option>
-                    @foreach($clients as $client)
-                        <option value="{{ $client->id }}">{{ $client->name }} ({{ $client->ip }})</option>
-                    @endforeach
-                </select>
-            </div>
-        </div>
-
-        <div id="lines-container">
-            <div class="text-center py-4">
-                <p class="text-muted">Select a client to view and manage lines</p>
-            </div>
-        </div>
-    </div>
-</div> -->
 @endsection
 
 @section('scripts')

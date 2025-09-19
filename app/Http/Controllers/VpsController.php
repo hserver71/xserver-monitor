@@ -284,7 +284,8 @@ class VpsController extends Controller
 
         // Update line and VPS records
         $line->update([
-            'assigned_at' => now()
+            'assigned_at' => now(),
+            'status' => 'Monitoring now'
         ]);
         $vps->update([
             'linename' => $line->username,

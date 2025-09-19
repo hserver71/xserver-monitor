@@ -63,7 +63,8 @@ class UnassignOldLines extends Command
                     'linename' => null,
                     'serverdomain' => null,
                     'domains' => null,
-                    'assigned_at' => null
+                    'assigned_at' => null,
+                    'status' => 'completed'
                 ]);
                 $unassignedCount++;
             } catch (\Exception $e) {
